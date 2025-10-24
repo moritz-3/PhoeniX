@@ -40,4 +40,4 @@ build = ["build", "twine"]
 [project.urls]
 Source = "https://github.com/moritz-3/autoXPCSanalysis"
 Issues = "https://github.com/moritz-3/autoXPCSanalysis/issues"
-Documentation = ""
+Documentation = "https://github.com/moritz-3/autoXPCSanalysis"
