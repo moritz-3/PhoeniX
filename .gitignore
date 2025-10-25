@@ -11,7 +11,7 @@ __pycache__/
 .ipynb_checkpoints/
 
 #testing folder
-./autoXPCS/testing/output/
+./PhoeniX/testing/output/
 
 *.pt
 *.h5
