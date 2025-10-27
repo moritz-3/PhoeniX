@@ -1,5 +1,5 @@
 [project]
-name = "autoXPCSanalysis"
+name = "PhoeniX"
 version = "0.0.1"
 authors = [
     {name = "Frederik Unger", email = "frederik.unger@uni-siegen.de"},
@@ -38,6 +38,6 @@ docs = ["jupyter-book", "sphinx"]
 build = ["build", "twine"]
 
 [project.urls]
-Source = "https://github.com/moritz-3/autoXPCSanalysis"
-Issues = "https://github.com/moritz-3/autoXPCSanalysis/issues"
-Documentation = "https://github.com/moritz-3/autoXPCSanalysis"
+Source = "https://github.com/moritz-3/PhoeniX"
+Issues = "https://github.com/moritz-3/PhoeniX/issues"
+Documentation = "https://github.com/moritz-3/PhoeniX"
