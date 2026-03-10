@@ -12,6 +12,7 @@ __pycache__/
 
 #testing folder
 ./PhoeniX/testing/output/
+./PhoeniX/testing/data/raw/
 
 *.pt
 *.h5
