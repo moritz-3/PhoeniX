@@ -1,81 +1,114 @@
 # -*- coding: utf-8 -*-
 """
-
+To Do:  Get rid of all the dictionary inits and move this to save functions
+        ScanSeries should take care of skip first frames
+        implement skip last frames
+        add none values to ScanSeries to check and give better errors
+        saxs and xpcs functions are not consistant in e.g. mask)
+        add saxs function calls for average obver all frames and saxs for each individual frame
 """
-from pathlip import Path
+from pathlib import Path
 import numpy as np
-import autoXPCS.processing.xpcs as proc_xpcs
+from processing import saxs, xpcs
 
 class Sample:
     """
-    class Sample contains the info about the beamtime(Path) and the sample name (str).
+    Contains gneneral information about the sample, specifically the sample name and the path to sample folder
+
+    Attributes:
+    ___________
+
+    sample_name : str
+                the name of the folder that was given for the sample during the experiment
+
+    dir_beamtime : pathlib.Path
+                path to the folder of the beamtime during which the sample was measured
     """
-    def __init__(self, dir_beamtime, sample_name):
-        self.dir_beamtime = Path(dir_beamtime)
+    def __init__(self, dir_beamtime:Path, sample_name:str):
         self.sample_name = sample_name
+        self.dir_beamtime = dir_beamtime
+        """
+        better to make a function with this for saving?
         self.info = {}
         self.info['dir_beamtime'] = str(self.dir_beamtime)
         self.info['sample_name'] = str(self.sample_name)
+        """
 
-class ScanCollection:
-    """
-    At P10, different types of XPCS-scans exist, namely 'series', 'dscan' and 'meshscan'. 
-    The later two contain multiple series of scans, all aquired with the same parameters except for one (dscan) or two (meshscan) motors (e.g., motor 'samx' to scan the sample in x-direction).
-    This allows for example to perform position resolved XPCS, but also is of advantage to average XPCS data of identical scans of a given sample. 
-    While series is defined separately, ScanCollection allows to perform the same type of analysis for all scans of a dscan/meshscan.
 
-    Attributes
-    ----------
-    sample : Sample
-        Sample object that contains the directory of the beamtime and the sample name
-    detector : str
-        Detector abbreviation, used for loading data (in the case of P10, DESY) but also used to distinguish between different detectors that record data at the same time.
-    scan_number : int
-        Specifies the sample in combination with the sample name.
-    skip_frames_start=0 : int
-        At P10, the shutter might open over the cause of the first few frames recorded. Thus, these frames contain data that is not of use for XPCS analysis. 
-        Note that the shutter speed at P10 is approximately 13 ms. Thus, especially scans with an exposure time shorter or equal to 13 ms suffer significantly from the opening of the shutter on the first frame(s).
-    scan : Scan
-        Scan object. The Scan object presents one of the spots 
-
-    """
-    def __init__(self, sample, detector, scan_number, skip_frames_start=0):
-        self.sample = sample
-        self.detector = detector
-        self.scan_number = scan_number
-        self.skip_frames_start = skip_frames_start
-        self.scan = None
-        self.counter_scan_series = 0
-
-    def load_scan(self, scan, counter_scan_series = None):
-        self.scan = scan
-        if counter_scan_series is None:
-            self.counter_scan_series = counter_scan_series + 1
-        else:
-            self.counter_scan_series = counter_scan_series
-            
 class ScanSeries:
     """
+    Contains information and data of the specific scan series
+
+    Attributes:
+    ___________
+
+    sample : Sample
+            Sample object that contains the sample name (folder name of the experiment) and the path to the beamtime folder
+
+    detector : str
+            Name of the detector used for the data aquesition
+
+    scan_number : int
+            Number of the scan (folder) the specific measurement is saved in
+
+    skip_frames_start : int
+            Number of first frames to skip in the calculations e.g. to eliminate shutter effects
+
+    raw_data : xr.DataArray
+            Raw data from the detector with dimensions frames, y and x. Addionally, experimental time(exp_time) and frame number (frame_nr) is defined as coordinates along frames dimension
+
+    number_frames : int
+            The number of frames that were taken during the aquestition
+
+    dim_x : int
+            Number of pixels in the detector x-dimension
+
+    dim_y : int
+            Number of pixels in the detector y-dimension
+
+    frame_time : float
+            time between two images
+
+    mask : masking.Mask
+
+    temperature : float | list
+        temperature(s) during the scan
+
+    Methods:
+    ___________
+
+    add_mask(mask:maskin.Mask)
+        adds Mask object with information on what pixels to exclude
+
+
+    add_raw_data(raw_data:xr.DataArray)
+        adds raw data of the scan series
+
     """
-    def __init__(self, sample, detector, scan_number, skip_frames_start=0):
-        self.sample = sample
-        self.detector = detector
-        self.scan_number  = scan_number
-        self.skip_frames_start = skip_frames_start
-        self.filenames_raw_data = []
+    def __init__(self, sample:Sample, detector:str, scan_number:int, skip_frames_start:int=0):
+        self.sample:Sample = sample
+        self.detector:str = detector
+        self.scan_number:int  = scan_number
+        self.skip_frames_start:int = skip_frames_start
         self.raw_data = None
         self.number_frames = None
         self.dim_x = None
         self.dim_y = None
-        self.experimental_parameters = {}
-        self.delay_time_s = None
-        self.exposure_time_s = None
+        #self.experimental_parameters = {}
+        self.frame_time = None
+        #self.delay_time_s = None
+        #self.exposure_time_s = None
         self.mask = None
+        self.temperature = None
+
+        """
+        better to make a function with this for saving?
         self.input = {}
         self.input['sample'] = sample.info
         self.input['detector'] = detector
         self.input['scan_number'] = scan_number
         self.input['skip_frames_start'] = skip_frames_start
+        """
 
     def add_mask(self, mask):
         """
@@ -83,59 +116,73 @@ class ScanSeries:
         Add Mask-object as parameter to a Scan-object. Update mask to info.
         """
         self.mask = mask
-        self.input['mask'] = mask.create_dict_output()
+        #self.input['mask'] = mask.create_dict_output()
 
     def add_filenames_raw_data(self, filenames_raw_data):
+        #not needed?
         self.filenames_raw_data = filenames_raw_data
-        self.input['filenames_raw'] = filenames_raw_data
+        #self.input['filenames_raw'] = filenames_raw_data
 
-    def add_raw_data(self, raw_data):
-        self.raw_data = raw_data
-        self.number_frames, self.dim_y, self.dim_x = raw_data.shape
-        self.input['number_frames'] = self.number_frames
-        self.input['dim_y'] = self.dim_y
-        self.input['dim_x'] = self.dim_x
+    def add_raw_data(self, raw_data:xr.DataArray):
+        """
+        raw_data xr.DataArray must be an xarray with dimensions frames, y and x. Addionally experimental time is defined as coordinates along frames dimension
+        """
+        self.raw_data:xr.DataArray = raw_data
+        self.number_frames = len(raw_data['frames'])
+        self.dim_y = len(raw_data['y'])
+        self.dim_x = len(raw_data['x'])
+        #self.input['number_frames'] = self.number_frames
+        #self.input['dim_y'] = self.dim_y
+        #self.input['dim_x'] = self.dim_x
 
-    def add_delay_time(self, delay_time, exposure_time=None):
+    def add_frame_time(self, frame_time):
         """
         input: float, _float
         Adds the parameters 'delay_time' and 'exposure_time' to the ScanSeries object. 
         These two parameters can differ in case of a dark time as is the case at P10, DESY. If they are the same, only 'delay_time' needs to be provided as input.
         """
-        self.delay_time = delay_time
-        if exposure_time is None:
-            self.exposure_time = delay_time
-        else:
-            self.exposure_time = exposure_time
+        self.frame_time = frame_time
 
-    def calculate_ttcfs(self, q_partitions):
+    def add_pyfai_config(self, pyfai_config):
+        self.pyfai_config = pyfai_config
+
+    def calculate_saxs_evo(self, precision_SAXS=600, segments=10):
+        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments, mask=self.mask)
+
+        saxs_evo_results = saxs_evo_results.assign_coords(max_exp_time = ('frames', [(t+1)*saxs_evo_results.frames_per_segment*self.frame_time for t in range(saxs_evo_results['frames'].shape[0])])) #check if frame_time is enoug or if more complicated with dark times
+        saxs_evo_results = saxs_evo_results.compute()
+        self.saxs_evo_results = saxs_evo_results
+
+    def calculate_saxs_mean(self, precision_SAXS=600):
+        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments=1, mask=self.mask)
+        saxs_evo_results = saxs_evo_results.squeeze('frames')
+        saxs_evo_results = saxs_evo_results.compute()
+        self.saxs_mean_results = saxs_evo_results
+
+    def calculate_saxs_evo_each_frame(self, precision_SAXS=600):
+        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments=self.number_frames, mask=self.mask)
+
+        saxs_evo_results = saxs_evo_results.assign_coords(max_exp_time = ('frames', [(t+1)*saxs_evo_results.frames_per_segment*self.frame_time for t in range(saxs_evo_results['frames'].shape[0])])) #check if frame_time is enoug or if more complicated with dark times
+        saxs_evo_results = saxs_evo_results.compute()
+        self.saxs_evo_results_each_frame = saxs_evo_results
+
+    def add_qrings(self, q_rings:QRings):
         """
-        input: QPartitions
+        input: 
+        """
+        self.q_rings = q_rings
+
+    def calculate_ttcfs(self):
+        """
         return: np.array(2D), np.array(3D), np.array(1D)
         Calculates the two-time correlation function for each partition provided by 'q_partitions' for the ScanSeries.
         """
-        data_3D = self.raw_data[self.skip_frames_start:,:,:]
-        number_frames_analyzed = self.number_frames - self.skip_frames_start
-        # initialize dummy arrays
-        intensities_per_q_partition = np.zeros((q_partitions.number_q_partitions, number_frames_analyzed))
-        pixels_per_q_partition = np.zeros(q_partitions.number_q_partitions)
-        ttc_per_q_partition = np.zeros((q_partitions.number_q_partitions, number_frames_analyzed, number_frames_analyzed))
-        # calculate ttc for each partition
-        for i in range(q_partitions.number_q_partitions):
-            # combine general mask and q-partition
-            if self.mask is None:
-                next_mask = q_partitions.arrays[i]
-            else:
-                next_mask = np.logical_and(q_partitions.arrays[i,:,:],self.mask.array_boolean)
-            # reduce dataset from 3D (number_frames, dim_y, dim_x) to 2D (number_frames, dim_xy) with dim_xy determined by the mask
-            next_data_2D = data_3D[:,next_mask]
-            # calculate ttc
-            next_intensity_per_q_partition, next_number_of_pixels, next_ttc = proc_xpcs.calculate_ttcf(next_data_2D)
-            intensities_per_q_partition[i,:] = next_intensity_per_q_partition
-            pixels_per_q_partition[i] = next_number_of_pixels
-            ttc_per_q_partition[i,:,:] = next_ttc
-        return (intensities_per_q_partition, ttc_per_q_partition, pixels_per_q_partition)
+        ttcfs = xpcs.calculate_ttcfs(self.raw_data, self.q_rings, mask=self.mask.array)
+        ttcfs = ttcfs.assign_coords(t1 = ('frame1', [t*self.frame_time for t in range(ttcfs['frame1'].shape[0])]))#check if frame_time is enoug or if more complicated with dark times check if t2 is needed
+        ttcfs = ttcfs.compute()
+        self.ttcf_data = ttcfs
 
+    #not yet reworked
     def calculate_all_g2s(self, ttcfs):
         number_frames_analyzed = self.number_frames - self.skip_frames_start
         number_partitions, number_frames_ttc, _ = ttcfs.shape
@@ -172,8 +219,8 @@ class ScanSeries:
             self.input.update(input_dict)
         else:
             self.input[specifier] = input_dict
-        
-        
+
+
 ###############################################################################
 #####                       functions for saving                          #####
 ###############################################################################
@@ -259,3 +306,42 @@ def save_results_g2(dir_save, filename_save_general, times, g2s):
     np.save(Path(dir_save) / f'{filename_save_general}_times.npy', times)
     np.save(Path(dir_save) / f'{filename_save_general}_g2s.npy', g2s)
     return summary_results
+
+#how to implement change this ?
+class ScanCollection:
+    """
+    At P10, different types of XPCS-scans exist, namely 'series', 'dscan' and 'meshscan'. 
+    The later two contain multiple series of scans, all aquired with the same parameters except for one (dscan) or two (meshscan) motors (e.g., motor 'samx' to scan the sample in x-direction).
+    This allows for example to perform position resolved XPCS, but also is of advantage to average XPCS data of identical scans of a given sample. 
+    While series is defined separately, ScanCollection allows to perform the same type of analysis for all scans of a dscan/meshscan.
+
+    Attributes
+    ----------
+    sample : Sample
+        Sample object that contains the directory of the beamtime and the sample name
+    detector : str
+        Detector abbreviation, used for loading data (in the case of P10, DESY) but also used to distinguish between different detectors that record data at the same time.
+    scan_number : int
+        Specifies the sample in combination with the sample name.
+    skip_frames_start=0 : int
+        At P10, the shutter might open over the cause of the first few frames recorded. Thus, these frames contain data that is not of use for XPCS analysis. 
+        Note that the shutter speed at P10 is approximately 13 ms. Thus, especially scans with an exposure time shorter or equal to 13 ms suffer significantly from the opening of the shutter on the first frame(s).
+    scan : Scan
+        Scan object. The Scan object presents one of the spots 
+
+    """
+    def __init__(self, sample, detector, scan_number, skip_frames_start=0):
+        self.sample = sample
+        self.detector = detector
+        self.scan_number = scan_number
+        self.skip_frames_start = skip_frames_start
+        self.scan = None
+        self.counter_scan_series = 0
+
+    def load_scan(self, scan, counter_scan_series = None):
+        self.scan = scan
+        if counter_scan_series is None:
+            self.counter_scan_series = counter_scan_series + 1
+        else:
+            self.counter_scan_series = counter_scan_series
+ 
