@@ -85,11 +85,12 @@ class ScanSeries:
         adds raw data of the scan series
 
     """
-    def __init__(self, sample:Sample, detector:str, scan_number:int, skip_frames_start:int=0):
+    def __init__(self, sample:Sample, detector:str, scan_number:int, skip_frames_start:int|None=None, skip_frames_end:int|None=None):
         self.sample:Sample = sample
         self.detector:str = detector
         self.scan_number:int  = scan_number
-        self.skip_frames_start:int = skip_frames_start
+        self.skip_frames_start:int|None = skip_frames_start
+        self.skip_frames_end:int|None = skip_frames_end
         self.raw_data = None
         self.number_frames = None
         self.dim_x = None
@@ -127,13 +128,35 @@ class ScanSeries:
         """
         raw_data xr.DataArray must be an xarray with dimensions frames, y and x. Addionally experimental time is defined as coordinates along frames dimension
         """
-        self.raw_data:xr.DataArray = raw_data
+        self.raw_data:xr.DataArray = raw_data # in principell skip frames cult be implemented here. Decicion to put in in calculation makes it more useabal
         self.number_frames = len(raw_data['frames'])
         self.dim_y = len(raw_data['y'])
         self.dim_x = len(raw_data['x'])
         #self.input['number_frames'] = self.number_frames
         #self.input['dim_y'] = self.dim_y
         #self.input['dim_x'] = self.dim_x
+
+    def slice_first_to_last_frame(self):
+        """
+        reduces the data to the data excluding the frames skipped in skip_frames_start and skip_frames_end
+        """
+
+        if self.skip_frames_start == None and self.skip_frames_end == None: return self.raw_data
+
+        elif self.skip_frames_end == None:
+            if self.skip_frames_start > self.number_frames:
+                raise IndexError(f'The number of skipped frames exceeds the number of frames in the measurement, which is {self.number_frames}.')
+            return self.raw_data.sel(frames=slice(self.skip_frames_start,self.number_frames))
+
+        elif self.skip_frames_start == None:
+            if self.skip_frames_end > self.number_frames:
+                raise IndexError(f'The number of skipped frames exceeds the number of frames in the measurement, which is {self.number_frames}.')
+            return self.raw_data.sel(frames=slice(self.skip_frames_start,self.number_frames-self.skip_frames_end))
+
+        else:
+            if self.skip_frames_start+self.skip_frames_end > self.number_frames:
+                raise IndexError(f'The number of skipped frames exceeds the number of frames in the measurement, which is {self.number_frames}.')
+            return self.raw_data.sel(frames=slice(self.skip_frames_start,self.number_frames-self.skip_frames_end))
 
     def add_frame_time(self, frame_time):
         """
@@ -147,20 +170,23 @@ class ScanSeries:
         self.pyfai_config = pyfai_config
 
     def calculate_saxs_evo(self, precision_SAXS=600, segments=10):
-        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments, mask=self.mask)
+        raw_data_slice = self.slice_first_to_last_frame()
+        saxs_evo_results = saxs.evolution_SAXS(raw_data_slice, self.pyfai_config, precision_SAXS, segments, mask=self.mask)
 
         saxs_evo_results = saxs_evo_results.assign_coords(max_exp_time = ('frames', [(t+1)*saxs_evo_results.frames_per_segment*self.frame_time for t in range(saxs_evo_results['frames'].shape[0])])) #check if frame_time is enoug or if more complicated with dark times
         saxs_evo_results = saxs_evo_results.compute()
         self.saxs_evo_results = saxs_evo_results
 
     def calculate_saxs_mean(self, precision_SAXS=600):
-        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments=1, mask=self.mask)
+        raw_data_slice = self.slice_first_to_last_frame()
+        saxs_evo_results = saxs.evolution_SAXS(raw_data_slice, self.pyfai_config, precision_SAXS, segments=1, mask=self.mask)
         saxs_evo_results = saxs_evo_results.squeeze('frames')
         saxs_evo_results = saxs_evo_results.compute()
         self.saxs_mean_results = saxs_evo_results
 
     def calculate_saxs_evo_each_frame(self, precision_SAXS=600):
-        saxs_evo_results = saxs.evolution_SAXS(self.raw_data, self.pyfai_config, precision_SAXS, segments=self.number_frames, mask=self.mask)
+        raw_data_slice = self.slice_first_to_last_frame()
+        saxs_evo_results = saxs.evolution_SAXS(raw_data_slice, self.pyfai_config, precision_SAXS, segments=len(raw_data_slice.frames), mask=self.mask)
 
         saxs_evo_results = saxs_evo_results.assign_coords(max_exp_time = ('frames', [(t+1)*saxs_evo_results.frames_per_segment*self.frame_time for t in range(saxs_evo_results['frames'].shape[0])])) #check if frame_time is enoug or if more complicated with dark times
         saxs_evo_results = saxs_evo_results.compute()
@@ -177,7 +203,8 @@ class ScanSeries:
         return: np.array(2D), np.array(3D), np.array(1D)
         Calculates the two-time correlation function for each partition provided by 'q_partitions' for the ScanSeries.
         """
-        ttcfs = xpcs.calculate_ttcfs(self.raw_data, self.q_rings, mask=self.mask.array)
+        raw_data_slice = self.slice_first_to_last_frame()
+        ttcfs = xpcs.calculate_ttcfs(raw_data_slice, self.q_rings, mask=self.mask.array)
         ttcfs = ttcfs.assign_coords(t1 = ('frame1', [t*self.frame_time for t in range(ttcfs['frame1'].shape[0])]))#check if frame_time is enoug or if more complicated with dark times check if t2 is needed
         ttcfs = ttcfs.compute()
         self.ttcf_data = ttcfs
