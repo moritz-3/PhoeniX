@@ -6,7 +6,15 @@ import numpy as np
 import re
 import ast
 import scipy
-import pyFAI
+# pyFAI (version control)
+try:
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator # since 2025
+except ImportError:
+    try:
+        from pyFAI.azimuthalIntegrator import AzimuthalIntegrator # till ~2022
+    except ImportError:
+        from pyFAI import AzimuthalIntegrator
+# end pyFAI (version control)
 import h5py
 
 def load_data(filenames):
@@ -31,7 +39,7 @@ def create_poni_from_batchinfo(scan_series, pixel_size_m=75*1e-6):
     """
     input: str, float - [*.batchinfo filename, detector pixel size (m)]
     return: pyFAI, dict - [poni-file, experimental parameters]
-    Creates a poni file from the information given in batchinfo.
+    Creates a poni file from the information given in batchinfo at beamline P10 (DESY).
     """
     filename_batchinfo = get_filename_batchinfo(scan_series)
     with open(filename_batchinfo, 'r') as f:
@@ -50,35 +58,32 @@ def create_poni_from_batchinfo(scan_series, pixel_size_m=75*1e-6):
                     ccdx = float(tmp[1])*1e-3
                 case 'ccdz:':
                     ccdz = float(tmp[1])*1e-3
+                case 'ccdtth:':
+                    ccdtth = np.deg2rad(float(tmp[-1]))
                 case 'ccdx0:':
                     ccdx0 = float(tmp[1])*1e-3
                 case 'ccdz0:':
                     ccdz0 = float(tmp[-1])*1e-3
+                case 'ccdtth0:':
+                    ccdtth0 = np.deg2rad(float(tmp[-1]))
+
                     
     center_x_pixels = x0 + (ccdx - ccdx0) / pixel_size_m
     center_y_pixels = y0 + (ccdz - ccdz0) / pixel_size_m
     wavelength_m = scipy.constants.h * scipy.constants.speed_of_light / (energy_eV * scipy.constants.e)
     # create poni file
-    try:
-        pyfai_config = pyFAI.azimuthalIntegrator.AzimuthalIntegrator(
-            dist = sample_detector_distance_m, # distance (m)
-            pixel1 = pixel_size_m, # pixel size (m) in y-direction
-            pixel2 = pixel_size_m, # pixel size (m) in x-direction
-            poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
-            poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
-            rot1 = 0, # rotation of detector (ToDo)
-            wavelength = wavelength_m # wavelength (m)
-            )
-    except:
-        pyfai_config = pyFAI.integrator.common.Integrator(
-            dist = sample_detector_distance_m, # distance (m)
-            pixel1 = pixel_size_m, # pixel size (m) in y-direction
-            pixel2 = pixel_size_m, # pixel size (m) in x-direction
-            poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
-            poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
-            rot1 = 0, # rotation of detector (ToDo)
-            wavelength = wavelength_m # wavelength (m)
-            )
+    pyfai_config = AzimuthalIntegrator(
+        dist = sample_detector_distance_m, # distance (m)
+        pixel1 = pixel_size_m, # pixel size (m) in y-direction
+        pixel2 = pixel_size_m, # pixel size (m) in x-direction
+        poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
+        poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
+        rot1 = 0,
+        rot2 = ccdtth - ccdtth0,
+        rot3 = 0,
+        wavelength = wavelength_m # wavelength (m)
+    )
+
     # create dictionary
     experimental_parameters = {}
     experimental_parameters['energy_eV'] = energy_eV
@@ -115,4 +120,5 @@ def get_delay_and_exposure_time(scan_series):
     with h5py.File(filename_master, 'r') as f:
         delay_time = f['entry/instrument/detector/frame_time'][()]
         exposure_time = f['entry/instrument/detector/count_time'][()]
-        return (delay_time, exposure_time)
+        dark_time = delay_time - exposure_time
+        return (delay_time, exposure_time, dark_time)
