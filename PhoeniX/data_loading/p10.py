@@ -8,12 +8,20 @@ To Do: Check if exposure and delay-/dark times are important correctly and how t
         Data logger / save for pyfai config
 """
 import scipy
-import pyFAI
-from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+# pyFAI (version control)
+try:
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator # since 2025
+except ImportError:
+    try:
+        from pyFAI.azimuthalIntegrator import AzimuthalIntegrator # till ~2022
+    except ImportError:
+        from pyFAI import AzimuthalIntegrator
+# end pyFAI (version control)
 import h5py
 import xarray as xr
 from pathlib import Path
 import dask.array as da
+import numpy as np
 
 def get_filename_batchinfo(scan_series:ScanSeries) -> Path:
     """"
@@ -73,8 +81,8 @@ def load_data(scan_series:ScanSeries, chunk_size:str|tuple[int:int:int]='auto'):
         data_keys = [key for key in f['entry/data/'].keys()]
         frame_time = f['entry/instrument/detector/frame_time']
         exposure_time = f['entry/instrument/detector/count_time'][()]
-        #if expusore time is important calculate here or via function in this file that is called here so that output in scan series is consistant
         scan_series.add_frame_time(frame_time[()])
+        scan_series.add_exposure_time(exposure_time[()])
 
         for i, key in enumerate(data_keys):
             match i:
@@ -160,30 +168,25 @@ def create_poni_file(scan_series:ScanSeries):# ->  pyFAI.azimuthalIntegrator.Azi
                     ccdx0 = float(tmp[1])*1e-3
                 case 'ccdz0:':
                     ccdz0 = float(tmp[-1])*1e-3
+                case 'ccdtth:':
+                    ccdtth = np.deg2rad(float(tmp[-1]))
+                case 'ccdtth0:':
+                    ccdtth0 = np.deg2rad(float(tmp[-1]))
 
     center_x_pixels = x0 + (ccdx - ccdx0) / pixel_size_m
     center_y_pixels = y0 + (ccdz - ccdz0) / pixel_size_m
     wavelength_m = scipy.constants.h * scipy.constants.speed_of_light / (energy_eV * scipy.constants.e)
     # create poni file
-    try:
-        pyfai_config = AzimuthalIntegrator(
-            dist = sample_detector_distance_m, # distance (m)
-            pixel1 = pixel_size_m, # pixel size (m) in y-direction
-            pixel2 = pixel_size_m, # pixel size (m) in x-direction
-            poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
-            poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
-            rot1 = 0, # rotation of detector (ToDo)
-            wavelength = wavelength_m # wavelength (m)
-            )
-    except:
-        pyfai_config = pyFAI.AzimuthalIntegrator(
-            dist = sample_detector_distance_m, # distance (m)
-            pixel1 = pixel_size_m, # pixel size (m) in y-direction
-            pixel2 = pixel_size_m, # pixel size (m) in x-direction
-            poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
-            poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
-            rot1 = 0, # rotation of detector (ToDo)
-            wavelength = wavelength_m # wavelength (m)
-            )
+    pyfai_config = AzimuthalIntegrator(
+        dist = sample_detector_distance_m, # distance (m)
+        pixel1 = pixel_size_m, # pixel size (m) in y-direction
+        pixel2 = pixel_size_m, # pixel size (m) in x-direction
+        poni1 = center_y_pixels * pixel_size_m, # position of direct beam (m) in y-direction
+        poni2 = center_x_pixels * pixel_size_m, # position of direct beam (m) in x-direction
+        rot1 = 0, # rotation of detector (ToDo)
+        rot2 = ccdtth - ccdtth0,
+        rot3 = 0,
+        wavelength = wavelength_m # wavelength (m)
+        )
 
     scan_series.add_pyfai_config(pyfai_config)
