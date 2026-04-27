@@ -161,10 +161,19 @@ class ScanSeries:
     def add_frame_time(self, frame_time):
         """
         input: float, _float
-        Adds the parameters 'delay_time' and 'exposure_time' to the ScanSeries object. 
-        These two parameters can differ in case of a dark time as is the case at P10, DESY. If they are the same, only 'delay_time' needs to be provided as input.
+        Adds the parameters frame_time
+        The frame time is the complete time between two frames.
         """
         self.frame_time = frame_time
+
+    def add_exposure_time(self, exposure_time):
+        """
+        input: float, _float
+        Adds the parameters 'exposure_time' to the ScanSeries object. 
+        The exposure time is the time the samplis exposed to the x-ray
+        """
+        self.exposure_time = exposure_time
+
 
     def add_pyfai_config(self, pyfai_config):
         self.pyfai_config = pyfai_config
