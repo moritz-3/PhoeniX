@@ -207,16 +207,29 @@ class ScanSeries:
         """
         self.q_rings = q_rings
 
-    def calculate_ttcfs(self):
+    def calculate_ttcfs(self, include_ttcf_via_std=False):
         """
         return: np.array(2D), np.array(3D), np.array(1D)
         Calculates the two-time correlation function for each partition provided by 'q_partitions' for the ScanSeries.
         """
         raw_data_slice = self.slice_first_to_last_frame()
-        ttcfs = xpcs.calculate_ttcfs(raw_data_slice, self.q_rings, mask=self.mask.array)
+
+        if include_ttcf_via_std == False:
+            ttcfs = xpcs.calculate_ttcfs(raw_data_slice, self.q_rings, mask=self.mask.array)
+        if include_ttcf_via_std == True:
+            ttcfs, ttcfs_std = xpcs.calculate_ttcfs(raw_data_slice, self.q_rings, mask=self.mask.array,include_ttcf_via_std=True)
+
         ttcfs = ttcfs.assign_coords(t1 = ('frame1', [t*self.frame_time for t in range(ttcfs['frame1'].shape[0])]))#check if frame_time is enoug or if more complicated with dark times check if t2 is needed
-        ttcfs = ttcfs.compute()
-        self.ttcf_data = ttcfs
+        if include_ttcf_via_std == True:
+            ttcfs_std = ttcfs_std.assign_coords(t1 = ('frame1', [t*self.frame_time for t in range(ttcfs['frame1'].shape[0])]))#check if frame_time is enoug or if more complicated with dark times check if t2 is needed
+
+        if include_ttcf_via_std == False:
+            ttcfs = ttcfs.compute()
+            self.ttcf_data = ttcfs
+        if include_ttcf_via_std == True:
+            ttcfs, ttcfs_std = ttcfs.compute(), ttcfs_std.compute()
+            self.ttcf_data = ttcfs
+            self.ttcf_std_data = ttcfs_std
 
     #not yet reworked
     def calculate_all_g2s(self, ttcfs):

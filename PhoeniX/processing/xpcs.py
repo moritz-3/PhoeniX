@@ -9,7 +9,7 @@ import numpy as np
 import xarray as xr
 import dask.array as da
 
-def calculate_ttcfs(data_3D:xr.DataArray, q_rings:QRings, mask=None):
+def calculate_ttcfs(data_3D:xr.DataArray, q_rings:QRings, mask=None, include_ttcf_via_std=False):
     """
     return: np.array(2D), np.array(3D), np.array(1D)
     Calculates the two-time correlation function for each partition provided by 'q_partitions' for the ScanSeries.
@@ -24,6 +24,8 @@ def calculate_ttcfs(data_3D:xr.DataArray, q_rings:QRings, mask=None):
     # initialize dummy arrays
     pixels_per_q_partition = da.zeros(number_of_q_partitions)
     ttc_per_q_partition = da.zeros((number_of_q_partitions, number_frames_analyzed, number_frames_analyzed))
+    if include_ttcf_via_std == True:
+        std_ttc_per_q_partition = da.zeros((number_of_q_partitions, number_frames_analyzed, number_frames_analyzed))
 
     # calculate ttc for each partition
     for i in range(number_of_q_partitions):
@@ -36,7 +38,12 @@ def calculate_ttcfs(data_3D:xr.DataArray, q_rings:QRings, mask=None):
 
         print(i)
         # calculate ttc
-        next_number_of_pixels, next_ttc = ttcf(next_data_2D)
+        if include_ttcf_via_std==False:
+            next_number_of_pixels, next_ttc = ttcf(next_data_2D, include_ttcf_via_std=include_ttcf_via_std)
+        if include_ttcf_via_std==True:
+            next_number_of_pixels, next_ttc, next_std_ttc = ttcf(next_data_2D, include_ttcf_via_std=include_ttcf_via_std)
+            std_ttc_per_q_partition[i,:,:] = next_std_ttc
+
         pixels_per_q_partition[i] = next_number_of_pixels
         ttc_per_q_partition[i,:,:] = next_ttc
 
@@ -46,6 +53,16 @@ def calculate_ttcfs(data_3D:xr.DataArray, q_rings:QRings, mask=None):
                                   },
                        coords={'q':q_rings.q_centers},
                        )
+
+    if include_ttcf_via_std==True:
+        ttcfs_std = xr.Dataset(data_vars={'ttcfs_std': (('q','frame1','frame2'),std_ttc_per_q_partition),
+                                      'pixel_in_ring': ('q',pixels_per_q_partition),
+                                      'q_widths':q_rings.q_widths,
+                                      },
+                           coords={'q':q_rings.q_centers},
+                           )
+        return ttcfs, ttcfs_std
+
     return ttcfs
 
 def ttcf_qring_masking(qring_mask:xr.DataArray, mask:None|da.array=None) -> da.Array:
@@ -55,10 +72,12 @@ def ttcf_qring_masking(qring_mask:xr.DataArray, mask:None|da.array=None) -> da.A
             full_mask = da.logical_and(qring_mask, mask)
         return full_mask
 
-def ttcf(data_2D):
+def ttcf(data_2D,include_ttcf_via_std=None):
     """
     input: np.array(2D) - (#frames, #pixels_xy)
-    return: np.array(#frames), int, np.array(#frames, #frames)
+    include_ttcf_via_std if True TTC with STD will be calculated in addition
+    return if include_ttcf_via_std=None: np.array(#frames), int, np.array(#frames, #frames)
+    return if include_ttcf_via_std=True: np.array(#frames), int, np.array(#frames, #frames), np.array(#frames, #frames)
     Calculates the two-time correlation function (TTCF) for a 2D np.array with dimensions (#frames, #pixels_xy). 
     This data-format can be retrieved from the standard raw-dataset of an XPCS experiment (dimensions (#frames, dim_y, dim_x)) via ToDO
     """
@@ -71,14 +90,24 @@ def ttcf(data_2D):
 
     # calculate variation in intensity per frame
     intensity_change = da.from_array(data_2D.mean(dim='xy',skipna=True))
+    if include_ttcf_via_std == True:
+        #std intensity per frame
+        std = da.from_array(data_2D.std(dim='xy',skipna=True))# in principle mean=intensity_change should prevent recalulating the mean but does not work maybe manuel std with privious caclulated mean is faster?
     # determine number of pixels
     number_of_pixels = data_2D.xy.shape[0]
     # calculate ttc via dot-product
     ttc = da.dot(data, data.transpose()) #use da.dot xr.dot results in empty array
     # normalisation of ttc
     ttc_norm = ttc / da.outer(intensity_change, intensity_change) / number_of_pixels
+    if include_ttcf_via_std == True:
+        ttc_std_numerator = ttc/ number_of_pixels - da.outer(intensity_change, intensity_change)
+        ttc_std_denominator = da.outer(std,std) #add this line with condition (maybe all three lines needed)
+        ttc_std = ttc_std_numerator/ttc_std_denominator
 
-    return number_of_pixels, ttc_norm
+        return number_of_pixels, ttc_norm, ttc_std
+    else:
+        return number_of_pixels, ttc_norm
+
 
 # from here on old functions
 def calculate_g2(ttcf):
