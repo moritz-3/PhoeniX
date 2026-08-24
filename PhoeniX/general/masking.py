@@ -7,6 +7,7 @@ to do:  add units where needed
 import numpy as np
 import json
 import xarray as xr
+import matplotlib
 
 class Mask:
     """
@@ -58,6 +59,20 @@ class Mask:
         Returns the object as a JSON file.
         """
         return json.dumps(self.create_dict_output(), indent=4, default=custom_encoder)
+
+    def show_mask(self):
+        cmap = matplotlib.colors.ListedColormap(['tab:blue', 'yellow'])
+        bounds = [-0.5, 0.5, 1.5]
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(self.array_boolean, origin='lower', cmap=cmap, norm=norm)
+        cbar = plt.colorbar(im, ticks=[0,1])
+        cbar.set_ticklabels(['Bad', 'Good'])
+        ax.set_xlabel(r'Pixel$_x$')
+        ax.set_ylabel(r'Pixel$_y$')
+        ax.set_title('Mask')
+        plt.show()
 
 def custom_encoder(obj):
     """
